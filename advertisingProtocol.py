@@ -4,7 +4,7 @@ import sys
 from pydispatch import dispatcher
 from random import seed, randint
 
-seed(7)
+seed()
 
 TRANSFER_TOTAL_DURATION = 1000
 TRANSFER_TIME_SLOTS = 100
@@ -30,13 +30,13 @@ class advertising(object):
 
     def run(self):
 	while True:
-            if (self.env.now < 100):
-                print('%s (thread %d): Start advertising at %d\n' %(self.name,
+            if (self.env.now < 50):
+                print('%s (thread %d): Start advertising at %d' %(self.name,
                     self.threadID, self.env.now))
 	    advertising_duration = TRANSFER_TOTAL_DURATION / TRANSFER_TIME_SLOTS
 	    # We yield the process that process() returns
 	    # to wait for it to finish
-            if (self.env.now < 100):
+            if (self.env.now < 50):
                 print('%s (thread %d): Sending Message at %d\n' %(self.name, 
                     self.threadID, self.env.now))
             dispatcher.send(message='message from Transfer', signal=TRANSFER_SIGNAL, 
@@ -61,20 +61,6 @@ class transfer():
         env = simpy.Environment()
         advertising(env, self.threadID, self.name)
         env.run(until=TRANSFER_TOTAL_DURATION)
-    
-
-class receiveMessageHandle():
-    def __init__(self, env):
-        self.env = env
-	self.action = env.process(self.run())
-
-    def run(self):    
-        dispatcher.connect(self.receiverHandler, signal=TRANSFER_SIGNAL,
-                sender=TRANSFER_SENDER)
-        yield self.env.timeout(1)
-
-    def receiverHandler(self, message):
-        print('Receiver has received message: %s. Time: %d\n' %(message, self.env.now))
 
 class receiverWakeupAndSleep(object):
     def __init__(self, env, threadID, name):
@@ -90,18 +76,23 @@ class receiverWakeupAndSleep(object):
                 self.threadID, self.env.now))
                 
             randWakeup = randint(1, RECEIVER_WAKE_UP_DURATION)
-            print("randWakeup = %d\n" %(randWakeup))
-            #envReceiver = simpy.Environment()
-            receiveMessageHandle(self.env)
-            self.env.run(until=randWakeup)
+            self.messageHandler(randWakeup)
             yield self.env.timeout(randWakeup)
-            #yield self.env.timeout(100)
-            
-            #yield self.env.timeout(9 - randWakeup)
-            
-            #print('%s (thread %d): Sleep at %d\n' %(self.name, 
-            #    self.threadID, self.env.now))
+
+            yield self.env.timeout(RECEIVER_WAKE_UP_DURATION + 1 - randWakeup)
+            print('%s (thread %d): Sleep at %d\n' %(self.name, 
+                self.threadID, self.env.now))
+            dispatcher.disconnect(self.handler, signal=TRANSFER_SIGNAL, 
+                    sender=TRANSFER_SENDER)
 	    yield self.env.timeout(RECEIVER_SLEEP_DURATION)
+
+    def messageHandler(self, randWakeup):
+        print("randWakeup = %d at %d\n" %(randWakeup, self.env.now))
+        dispatcher.connect(self.handler, signal=TRANSFER_SIGNAL, 
+                sender=TRANSFER_SENDER)
+    
+    def handler(self, message):
+        print('receiver has received message: %s at %d' %(message, self.env.now))
 
 def receiveAdvertising(env, receiverWakeup):
     yield env.timeout(1)
